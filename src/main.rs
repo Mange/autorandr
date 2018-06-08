@@ -76,7 +76,7 @@ fn setup_screens(args: Vec<String>) -> Result<(), Box<std::error::Error>> {
 #[derive(Debug)]
 struct Monitor {
     output: String,
-    modelines: Vec<Modeline>,
+    best_modeline: Modeline,
 }
 
 #[derive(Debug)]
@@ -94,71 +94,70 @@ impl Monitor {
         let rates_re: Regex = "(\\d+\\.\\d+)".parse().unwrap();
 
         let mut monitors: Vec<Monitor> = Vec::new();
-        let mut current_monitor: Option<Monitor> = None;
+        let mut current_output: Option<String> = None;
+        let mut best_modeline: Option<Modeline> = None;
 
         for line in s.lines() {
             if let Some(captures) = output_re.captures(line) {
                 // If it matches a new output line, finish the current monitor and
                 // start over on a new one.
-                if let Some(monitor) = current_monitor.take() {
-                    monitors.push(monitor.finish());
+                if let (Some(output), Some(modeline)) = (current_output, best_modeline) {
+                    monitors.push(Monitor::new(output, modeline));
                 }
 
-                current_monitor = Some(Monitor {
-                    output: captures["output"].into(),
-                    modelines: Vec::new(),
-                });
+                current_output = Some(captures["output"].into());
+                best_modeline = None;
             } else if let Some(captures) = modeline_re.captures(line) {
-                // If it matches a modeline line, then add it to the current
-                // monitor.
-                match &mut current_monitor {
-                    Some(ref mut monitor) => {
-                        let height = captures["height"].parse().unwrap();
-                        let width = captures["width"].parse().unwrap();
-                        let best_rate = rates_re
-                            .captures_iter(&captures["rates"])
-                            .map(|caps| caps[0].parse().unwrap())
-                            .max_by(|a: &f32, b: &f32| a.partial_cmp(b).unwrap()); // Begone, NaN!
+                let height = captures["height"].parse().unwrap();
+                let width = captures["width"].parse().unwrap();
+                let best_rate = rates_re
+                    .captures_iter(&captures["rates"])
+                    .map(|caps| caps[0].parse().unwrap())
+                    .max_by(|a: &f32, b: &f32| a.partial_cmp(b).unwrap()); // Begone, NaN!
 
-                        monitor.modelines.push(Modeline {
-                            resolution: (width, height),
-                            best_rate,
-                        });
+                let new_modeline = Modeline {
+                    resolution: (width, height),
+                    best_rate,
+                };
+
+                let old_modeline = best_modeline.take();
+
+                match old_modeline {
+                    Some(best) => {
+                        if new_modeline.resolution.0 > best.resolution.0 {
+                            best_modeline = Some(new_modeline);
+                        } else {
+                            best_modeline = Some(best);
+                        }
                     }
                     None => {
-                        panic!("Unexpected xrandr output. Found a modeline row outside of a monitor context: {}", line);
+                        best_modeline = Some(new_modeline);
                     }
                 }
             }
         }
 
-        if let Some(monitor) = current_monitor.take() {
-            monitors.push(monitor.finish());
+        if let (Some(output), Some(modeline)) = (current_output, best_modeline) {
+            monitors.push(Monitor::new(output, modeline));
         }
 
-        monitors.sort_by_key(|monitor| {
-            monitor
-                .modelines
-                .get(0)
-                .map(|m| -m.resolution.0)
-                .unwrap_or(0)
-        });
+        monitors.sort_by_key(|monitor| -monitor.best_modeline.resolution.0);
         Ok(monitors)
     }
 
-    fn finish(mut self) -> Self {
-        // Sort by width, in reverse order (so negative width)
-        self.modelines
-            .sort_by_key(|modeline| -modeline.resolution.0);
-        self
+    fn new(output: String, best_modeline: Modeline) -> Monitor {
+        Monitor {
+            output,
+            best_modeline,
+        }
     }
 
     fn best_resolution(&self) -> (i32, i32) {
-        self.modelines[0].resolution
+        self.best_modeline.resolution
     }
 
     fn best_rate(&self) -> Option<f32> {
-        self.modelines[0].best_rate
+        self.best_modeline.best_rate
     }
 }
 
@@ -221,17 +220,17 @@ DP-5 disconnected (normal left inverted right x axis y axis)
         let monitors = vec![
             Monitor {
                 output: "FOO-1".into(),
-                modelines: vec![Modeline {
+                best_modeline: Modeline {
                     resolution: (2560, 1440),
                     best_rate: Some(144.0),
-                }],
+                },
             },
             Monitor {
                 output: "FOO-2".into(),
-                modelines: vec![Modeline {
+                best_modeline: Modeline {
                     resolution: (1920, 1080),
                     best_rate: Some(59.95),
-                }],
+                },
             },
         ];
 
