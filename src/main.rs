@@ -1,34 +1,28 @@
 extern crate regex;
+#[macro_use]
+extern crate structopt;
 
 use regex::Regex;
-use std::env::args;
 use std::process::Command;
+use structopt::StructOpt;
 
-fn help(program_name: &str) {
-    println!("Usage: {} [--dry-run]", program_name);
-    println!("\nTries to set up connected screens automatically.");
+#[derive(Default, StructOpt)]
+#[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
+struct Opts {
+    #[structopt(short = "n", long = "dry-run")]
+    /// Don't set resolution, instead the xrandr command that would have been executed.
+    dry_run: bool,
 }
 
 fn main() -> Result<(), Box<std::error::Error>> {
+    let opts = Opts::from_args();
     let output = Command::new("xrandr").arg("--current").output()?;
-    let mut dry_run = false;
-
-    let mut cmdline = args();
-    let program_name = cmdline.next().unwrap_or_else(|| String::from("autorandr"));
-
-    for arg in cmdline {
-        match arg.as_str() {
-            "--dry-run" => dry_run = true,
-            "--help" => return Ok(help(&program_name)),
-            unknown => return Err(format!("{} is not a valid argument", unknown).into()),
-        }
-    }
 
     if output.status.success() {
         let monitors: Vec<Monitor> = Monitor::parse(&String::from_utf8(output.stdout)?)?;
         let args = xrandr_args(monitors);
 
-        if dry_run {
+        if opts.dry_run {
             println!("xrandr {}", args.join(" "));
             Ok(())
         } else {
