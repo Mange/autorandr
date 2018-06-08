@@ -44,8 +44,10 @@ fn xrandr_args(monitors: Vec<Monitor>) -> Vec<String> {
         args.push(monitor.output.clone());
         args.push("--mode".into());
         args.push(format!("{}x{}", width, height));
-        args.push("--rate".into());
-        args.push(format!("{}", monitor.best_rate()));
+        if let Some(rate) = monitor.best_rate() {
+            args.push("--rate".into());
+            args.push(format!("{}", rate));
+        }
 
         if let Some(last_monitor) = last_monitor.take() {
             args.push("--right-of".into());
@@ -80,7 +82,7 @@ struct Monitor {
 #[derive(Debug)]
 struct Modeline {
     resolution: (i32, i32),
-    rates: Vec<f32>,
+    best_rate: Option<f32>,
 }
 
 impl Monitor {
@@ -113,19 +115,14 @@ impl Monitor {
                     Some(ref mut monitor) => {
                         let height = captures["height"].parse().unwrap();
                         let width = captures["width"].parse().unwrap();
-                        let mut rates = rates_re
+                        let best_rate = rates_re
                             .captures_iter(&captures["rates"])
                             .map(|caps| caps[0].parse().unwrap())
-                            .collect::<Vec<f32>>();
-
-                        // Sort rates so the largest ones end up first. f32 does
-                        // not implement ord, so convert them to large integers
-                        // instead to allow sorting.
-                        rates.sort_by_key(|f| (f * -1000.0).round() as i32);
+                            .max_by(|a: &f32, b: &f32| a.partial_cmp(b).unwrap()); // Begone, NaN!
 
                         monitor.modelines.push(Modeline {
                             resolution: (width, height),
-                            rates: rates,
+                            best_rate,
                         });
                     }
                     None => {
@@ -160,8 +157,8 @@ impl Monitor {
         self.modelines[0].resolution
     }
 
-    fn best_rate(&self) -> f32 {
-        self.modelines[0].rates[0]
+    fn best_rate(&self) -> Option<f32> {
+        self.modelines[0].best_rate
     }
 }
 
@@ -215,8 +212,8 @@ DP-5 disconnected (normal left inverted right x axis y axis)
         assert_eq!(monitors[0].best_resolution(), (2560, 1440));
         assert_eq!(monitors[1].best_resolution(), (1920, 1200));
 
-        assert_eq!(monitors[0].best_rate(), 143.86);
-        assert_eq!(monitors[1].best_rate(), 59.95);
+        assert_eq!(monitors[0].best_rate(), Some(143.86));
+        assert_eq!(monitors[1].best_rate(), Some(59.95));
     }
 
     #[test]
@@ -226,14 +223,14 @@ DP-5 disconnected (normal left inverted right x axis y axis)
                 output: "FOO-1".into(),
                 modelines: vec![Modeline {
                     resolution: (2560, 1440),
-                    rates: vec![144.0],
+                    best_rate: Some(144.0),
                 }],
             },
             Monitor {
                 output: "FOO-2".into(),
                 modelines: vec![Modeline {
                     resolution: (1920, 1080),
-                    rates: vec![59.95],
+                    best_rate: Some(59.95),
                 }],
             },
         ];
