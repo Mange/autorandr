@@ -19,10 +19,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
     let output = Command::new("xrandr").arg("--current").output()?;
 
     if output.status.success() {
-        let screens: Vec<Screen> = Monitor::parse(&String::from_utf8(output.stdout)?)?
-            .into_iter()
-            .map(Screen::from)
-            .collect();
+        let screens = parse_screens(&String::from_utf8(output.stdout)?)?;
         let args = xrandr_args(screens);
 
         if opts.dry_run {
@@ -87,72 +84,75 @@ struct Modeline {
 }
 
 #[derive(Debug)]
+/// Represents a finished configuration for a single screen. This will be sent
+/// to xrandr to configure the given output.
 struct Screen {
     output: String,
     resolution: String,
     rate: Option<f32>,
 }
 
-impl Monitor {
-    fn parse(s: &str) -> Result<Vec<Monitor>, String> {
-        let output_re: Regex = "^(?P<output>[A-Z0-9-]+) connected ".parse().unwrap();
-        let modeline_re: Regex = "^\\s+(?P<width>\\d+)x(?P<height>\\d+)\\s+(?P<rates>.*)$"
-            .parse()
-            .unwrap();
-        let rates_re: Regex = "(\\d+\\.\\d+)".parse().unwrap();
+fn parse_screens(xrandr_output: &str) -> Result<Vec<Screen>, String> {
+    let output_re: Regex = "^(?P<output>[A-Z0-9-]+) connected ".parse().unwrap();
+    let modeline_re: Regex = "^\\s+(?P<width>\\d+)x(?P<height>\\d+)\\s+(?P<rates>.*)$"
+        .parse()
+        .unwrap();
+    let rates_re: Regex = "(\\d+\\.\\d+)".parse().unwrap();
 
-        let mut monitors: Vec<Monitor> = Vec::new();
-        let mut current_output: Option<String> = None;
-        let mut best_modeline: Option<Modeline> = None;
+    let mut monitors: Vec<Monitor> = Vec::new();
+    let mut current_output: Option<String> = None;
+    let mut best_modeline: Option<Modeline> = None;
 
-        for line in s.lines() {
-            if let Some(captures) = output_re.captures(line) {
-                // If it matches a new output line, finish the current monitor and
-                // start over on a new one.
-                if let (Some(output), Some(modeline)) = (current_output, best_modeline) {
-                    monitors.push(Monitor::new(output, modeline));
-                }
+    for line in xrandr_output.lines() {
+        if let Some(captures) = output_re.captures(line) {
+            // If it matches a new output line, finish the current monitor and
+            // start over on a new one.
+            if let (Some(output), Some(modeline)) = (current_output, best_modeline) {
+                monitors.push(Monitor::new(output, modeline));
+            }
 
-                current_output = Some(captures["output"].into());
-                best_modeline = None;
-            } else if let Some(captures) = modeline_re.captures(line) {
-                let height = captures["height"].parse().unwrap();
-                let width = captures["width"].parse().unwrap();
-                let best_rate = rates_re
-                    .captures_iter(&captures["rates"])
-                    .map(|caps| caps[0].parse().unwrap())
-                    .max_by(|a: &f32, b: &f32| a.partial_cmp(b).unwrap()); // Begone, NaN!
+            current_output = Some(captures["output"].into());
+            best_modeline = None;
+        } else if let Some(captures) = modeline_re.captures(line) {
+            let height = captures["height"].parse().unwrap();
+            let width = captures["width"].parse().unwrap();
+            let best_rate = rates_re
+                .captures_iter(&captures["rates"])
+                .map(|caps| caps[0].parse().unwrap())
+                .max_by(|a: &f32, b: &f32| a.partial_cmp(b).unwrap()); // Begone, NaN!
 
-                let new_modeline = Modeline {
-                    resolution: (width, height),
-                    best_rate,
-                };
+            let new_modeline = Modeline {
+                resolution: (width, height),
+                best_rate,
+            };
 
-                let old_modeline = best_modeline.take();
+            let old_modeline = best_modeline.take();
 
-                match old_modeline {
-                    Some(best) => {
-                        if new_modeline.resolution.0 > best.resolution.0 {
-                            best_modeline = Some(new_modeline);
-                        } else {
-                            best_modeline = Some(best);
-                        }
-                    }
-                    None => {
+            match old_modeline {
+                Some(best) => {
+                    if new_modeline.resolution.0 > best.resolution.0 {
                         best_modeline = Some(new_modeline);
+                    } else {
+                        best_modeline = Some(best);
                     }
+                }
+                None => {
+                    best_modeline = Some(new_modeline);
                 }
             }
         }
-
-        if let (Some(output), Some(modeline)) = (current_output, best_modeline) {
-            monitors.push(Monitor::new(output, modeline));
-        }
-
-        monitors.sort_by_key(|monitor| -monitor.best_modeline.resolution.0);
-        Ok(monitors)
     }
 
+    if let (Some(output), Some(modeline)) = (current_output, best_modeline) {
+        monitors.push(Monitor::new(output, modeline));
+    }
+
+    monitors.sort_by_key(|monitor| -monitor.best_modeline.resolution.0);
+
+    Ok(monitors.into_iter().map(Screen::from).collect())
+}
+
+impl Monitor {
     fn new(output: String, best_modeline: Modeline) -> Monitor {
         Monitor {
             output,
@@ -214,11 +214,7 @@ DP-4 connected 1920x1200+2560+0 (normal left inverted right x axis y axis) 518mm
    640x480       59.94
 DP-5 disconnected (normal left inverted right x axis y axis)
 "##;
-        let screens: Vec<_> = Monitor::parse(output)
-            .unwrap()
-            .into_iter()
-            .map(Screen::from)
-            .collect();
+        let screens = parse_screens(output).unwrap();
         assert_eq!(screens.len(), 2);
 
         assert_eq!(screens[0].output, "DP-0");
