@@ -19,8 +19,11 @@ fn main() -> Result<(), Box<std::error::Error>> {
     let output = Command::new("xrandr").arg("--current").output()?;
 
     if output.status.success() {
-        let monitors: Vec<Monitor> = Monitor::parse(&String::from_utf8(output.stdout)?)?;
-        let args = xrandr_args(monitors);
+        let screens: Vec<Screen> = Monitor::parse(&String::from_utf8(output.stdout)?)?
+            .into_iter()
+            .map(Screen::from)
+            .collect();
+        let args = xrandr_args(screens);
 
         if opts.dry_run {
             println!("xrandr {}", args.join(" "));
@@ -33,29 +36,27 @@ fn main() -> Result<(), Box<std::error::Error>> {
     }
 }
 
-fn xrandr_args(monitors: Vec<Monitor>) -> Vec<String> {
-    let mut last_monitor: Option<Monitor> = None;
+fn xrandr_args(screens: Vec<Screen>) -> Vec<String> {
+    let mut last_screen: Option<Screen> = None;
     let mut args: Vec<String> = Vec::new();
 
-    for monitor in monitors.into_iter() {
-        let (width, height) = monitor.best_resolution();
-
+    for screen in screens.into_iter() {
         args.push("--output".into());
-        args.push(monitor.output.clone());
+        args.push(screen.output.clone());
         args.push("--mode".into());
-        args.push(format!("{}x{}", width, height));
-        if let Some(rate) = monitor.best_rate() {
+        args.push(screen.resolution.clone());
+        if let Some(rate) = screen.rate {
             args.push("--rate".into());
             args.push(format!("{}", rate));
         }
 
-        if let Some(last_monitor) = last_monitor.take() {
+        if let Some(last_screen) = last_screen.take() {
             args.push("--right-of".into());
-            args.push(last_monitor.output);
+            args.push(last_screen.output);
         } else {
             args.push("--primary".into());
         }
-        last_monitor = Some(monitor);
+        last_screen = Some(screen);
     }
 
     args
@@ -83,6 +84,13 @@ struct Monitor {
 struct Modeline {
     resolution: (i32, i32),
     best_rate: Option<f32>,
+}
+
+#[derive(Debug)]
+struct Screen {
+    output: String,
+    resolution: String,
+    rate: Option<f32>,
 }
 
 impl Monitor {
@@ -151,13 +159,17 @@ impl Monitor {
             best_modeline,
         }
     }
+}
 
-    fn best_resolution(&self) -> (i32, i32) {
-        self.best_modeline.resolution
-    }
+impl From<Monitor> for Screen {
+    fn from(monitor: Monitor) -> Screen {
+        let (width, height) = monitor.best_modeline.resolution;
 
-    fn best_rate(&self) -> Option<f32> {
-        self.best_modeline.best_rate
+        Screen {
+            output: monitor.output,
+            resolution: format!("{}x{}", width, height),
+            rate: monitor.best_modeline.best_rate,
+        }
     }
 }
 
@@ -202,39 +214,39 @@ DP-4 connected 1920x1200+2560+0 (normal left inverted right x axis y axis) 518mm
    640x480       59.94
 DP-5 disconnected (normal left inverted right x axis y axis)
 "##;
-        let monitors = Monitor::parse(output).unwrap();
-        assert_eq!(monitors.len(), 2);
+        let screens: Vec<_> = Monitor::parse(output)
+            .unwrap()
+            .into_iter()
+            .map(Screen::from)
+            .collect();
+        assert_eq!(screens.len(), 2);
 
-        assert_eq!(monitors[0].output, "DP-0");
-        assert_eq!(monitors[1].output, "DP-4");
+        assert_eq!(screens[0].output, "DP-0");
+        assert_eq!(screens[1].output, "DP-4");
 
-        assert_eq!(monitors[0].best_resolution(), (2560, 1440));
-        assert_eq!(monitors[1].best_resolution(), (1920, 1200));
+        assert_eq!(screens[0].resolution, "2560x1440");
+        assert_eq!(screens[1].resolution, "1920x1200");
 
-        assert_eq!(monitors[0].best_rate(), Some(143.86));
-        assert_eq!(monitors[1].best_rate(), Some(59.95));
+        assert_eq!(screens[0].rate, Some(143.86));
+        assert_eq!(screens[1].rate, Some(59.95));
     }
 
     #[test]
     fn it_builds_xrandr_args_from_the_left() {
-        let monitors = vec![
-            Monitor {
+        let screens = vec![
+            Screen {
                 output: "FOO-1".into(),
-                best_modeline: Modeline {
-                    resolution: (2560, 1440),
-                    best_rate: Some(144.0),
-                },
+                resolution: "2560x1440".into(),
+                rate: Some(144.0),
             },
-            Monitor {
+            Screen {
                 output: "FOO-2".into(),
-                best_modeline: Modeline {
-                    resolution: (1920, 1080),
-                    best_rate: Some(59.95),
-                },
+                resolution: "1920x1080".into(),
+                rate: Some(59.95),
             },
         ];
 
-        let args = xrandr_args(monitors);
+        let args = xrandr_args(screens);
 
         assert_eq!(
             &args,
