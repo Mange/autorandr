@@ -22,7 +22,7 @@ USAGE:
     autorandr [FLAGS]
 
 FLAGS:
-    -n, --dry-run    Don't set resolution, instead the xrandr command that would have been executed.
+    -n, --dry-run    Don't set resolution, instead print the xrandr command that would have been executed.
     -h, --help       Prints help information
     -V, --version    Prints version information
 ```

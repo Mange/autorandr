@@ -10,7 +10,7 @@ use structopt::StructOpt;
 #[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
 struct Opts {
     #[structopt(short = "n", long = "dry-run")]
-    /// Don't set resolution, instead the xrandr command that would have been executed.
+    /// Don't set resolution, instead print the xrandr command that would have been executed.
     dry_run: bool,
 }
 
