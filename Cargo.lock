@@ -26,7 +26,7 @@ dependencies = [
 
 [[package]]
 name = "autorandr"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "regex 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "structopt 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",

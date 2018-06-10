@@ -13,7 +13,7 @@ left and the smallest screen to the right.
 Execute `autorandr` inside your Xorg session. You must have `xrandr` installed.
 
 ```
-autorandr 0.1.0
+autorandr 1.0.0
 Magnus Bergmark <magnus.bergmark@gmail.com>
 Maximize resolution and refresh rate of all connected monitors and order them in an automatic layout. Currently the
 largest screen is always placed leftmost with smaller screens going to the right.
