@@ -1,5 +1,9 @@
 # autorandr
 
+| | |
+|---|---|
+| ⚠️ | **Warning:** This project is no longer maintained. I found another project (with the same name - [autorandr](https://github.com/phillipberndt/autorandr)) that does everything I want which saves me a lot of time. It even supports the extra stuff under "Future plans" below. |
+
 > Automatically assigns a layout to all connected screens using xrandr.
 
 This small command will automatically make all your connected displays use their
@@ -51,7 +55,7 @@ on:
 * Allow smarter layouts, like "Biggest in the center, smaller around it"
 * Allow layout presets to be saved; "If these displays are connected, use layout
   X, otherwise pick something automatically".
-  
+
 Let me know if you are interested!
 
 ## Copyright and license
